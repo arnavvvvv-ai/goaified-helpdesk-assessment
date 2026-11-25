@@ -39,6 +39,8 @@ const prohibited = /\b(ignore|override|disregard)\b.{0,40}\b(instructions|polic(
 const personalInfo = /\b(email address|phone number|home address|government id|social security|personal contact)\b/i;
 const unsupportedPolicy = /\b(sabbatical|bereavement|parental|paternity|maternity|overtime)\b/i;
 const domain = /\b(hr|it|leave|vacation|holiday|password|vpn|software|device|laptop|employee|expenses?|reimburse\w*|remote|wfh|policy|sabbatical|bereavement|parental|paternity|maternity|overtime)\b/i;
+const personalBalance = /\b(balance|remaining|left|available|unused)\b|\b(?:how many|how much)\b.*\b(?:do i have|does e\d{3} have)\b/i;
+const policyContext = /\b(sick|policy|advance|notice|documentation|consecutive|request|approval|approve|carryover|carry over|accrual)\b/i;
 const noAnswer = 'I could not find an answer in the approved policies. Please contact the relevant HR or IT team.';
 const protect = (answer) => answer
   .replace(/\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/g, '[redacted email]')
@@ -67,15 +69,15 @@ export async function serve() {
     const query = embed(question);
     if (!tokens(question).length) return answer(noAnswer);
     const { rows: candidates } = await db.query(`SELECT id, title, content, 1 - (embedding <=> $1::vector) AS similarity
-      FROM policies ORDER BY embedding <=> $1::vector LIMIT 3`, [query]);
+      FROM policies ORDER BY embedding <=> $1::vector, id LIMIT 3`, [query]);
     const queryWords = new Set(tokens(question));
     const match = candidates.find((row) => row.similarity >= 0.19 && tokens(row.title).some((word) => queryWords.has(word)));
     return answer(match ? `${match.content} [${match.id} | ${match.title}]` : noAnswer);
   });
 
   server.registerTool('get_my_leave_balance', {
-    description: 'Return only the authenticated demo employee’s remaining leave days.',
-    inputSchema: {},
+    description: 'Return the fixed demo employee’s remaining annual leave days.',
+    inputSchema: z.strictObject({}),
   }, async () => {
     // The stdio process represents a trusted demo session for E102. Callers cannot supply an identity.
     const { rows } = await db.query('SELECT days_remaining FROM employee_leave WHERE employee_id = $1', ['E102']);
@@ -101,7 +103,10 @@ export async function createHelpdesk() {
       if (offTopic.test(question) || !domain.test(question)) return 'That is outside the HR and IT helpdesk scope.';
       const ids = [...question.matchAll(/\bE\d{3}\b/gi)].map(([id]) => id.toUpperCase());
       if (ids.some((id) => id !== 'E102')) return 'I can only show leave information for your own demo account.';
-      const balance = /\bleave\b/i.test(question) && /\b(balance|remaining|left|how many)\b/i.test(question);
+      const balance = /\b(?:leave|vacation)\b/i.test(question)
+        && personalBalance.test(question)
+        && !policyContext.test(question)
+        && !unsupportedPolicy.test(question);
       const result = await client.callTool(balance
         ? { name: 'get_my_leave_balance', arguments: {} }
         : { name: 'search_policy', arguments: { question } });
