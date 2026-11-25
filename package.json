@@ -1,0 +1,12 @@
+{
+  "name": "hr-it-helpdesk-evaluation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {"start": "node helpdesk.mjs", "test": "node --test helpdesk.test.mjs"},
+  "dependencies": {
+    "@electric-sql/pglite": "^0.3.15",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "zod": "^3.25.76"
+  }
+}
